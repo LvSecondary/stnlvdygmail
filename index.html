@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gmail Widget – Beta v0.1</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 10px;
+      background: #f7f7f7;
+    }
+    h1 {
+      font-size: 1.2em;
+      margin-bottom: 10px;
+    }
+    #status {
+      color: green;
+      font-size: 0.9em;
+    }
+    .mail {
+      background: white;
+      margin: 5px 0;
+      padding: 8px;
+      border-radius: 5px;
+      box-shadow: 0 0 5px #ccc;
+    }
+    textarea, input {
+      width: 100%;
+      margin: 5px 0;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    button {
+      padding: 6px 12px;
+      margin-top: 5px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    small {
+      display: block;
+      margin-top: 15px;
+      color: #999;
+    }
+  </style>
+</head>
+<body>
+  <h1>📬 Gmail Widget <small>Beta v0.1</small></h1>
+  <div id="status">🔒 No autenticado</div>
+  <button id="login">Iniciar sesión con Google</button>
+
+  <div id="inbox" style="margin-top:20px;"></div>
+
+  <h3>Enviar correo</h3>
+  <input type="text" id="to" placeholder="Destinatario">
+  <input type="text" id="subject" placeholder="Asunto">
+  <textarea id="body" rows="5" placeholder="Mensaje"></textarea>
+  <button id="send">Enviar</button>
+
+  <small>Beta v0.1 • Usa una cuenta autorizada por OAuth2</small>
+
+  <script>
+    const API_KEY = 'AIzaSyDFz7dA4Lh9NCo6gPPrbD_PHw4N4vi26jQ';
+    const CLIENT_ID = '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com';
+    const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
+    const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest';
+
+    document.getElementById('login').addEventListener('click', () => {
+      gapi.load('client:auth2', async () => {
+        await gapi.client.init({
+          apiKey: API_KEY,
+          clientId: CLIENT_ID,
+          discoveryDocs: [DISCOVERY_DOC],
+          scope: SCOPES
+        });
+
+        const authInstance = gapi.auth2.getAuthInstance();
+        authInstance.signIn().then(() => {
+          document.getElementById('status').textContent = '✅ Autenticado';
+          listEmails();
+        });
+      });
+    });
+
+    async function listEmails() {
+      const res = await gapi.client.gmail.users.messages.list({
+        userId: 'me',
+        maxResults: 5
+      });
+      const inbox = document.getElementById('inbox');
+      inbox.innerHTML = '<h3>📥 Correos recientes</h3>';
+      for (const msg of res.result.messages) {
+        const full = await gapi.client.gmail.users.messages.get({
+          userId: 'me',
+          id: msg.id
+        });
+        const snippet = full.result.snippet;
+        inbox.innerHTML += `<div class="mail">${snippet}</div>`;
+      }
+    }
+
+    document.getElementById('send').addEventListener('click', async () => {
+      const to = document.getElementById('to').value;
+      const subject = document.getElementById('subject').value;
+      const body = document.getElementById('body').value;
+      const raw = btoa(
+        `To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`
+      ).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      await gapi.client.gmail.users.messages.send({
+        userId: 'me',
+        resource: {
+          raw: raw
+        }
+      });
+      alert('✅ Correo enviado');
+    });
+  </script>
+  <script src="https://apis.google.com/js/api.js"></script>
+</body>
+</html>
