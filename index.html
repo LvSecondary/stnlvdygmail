@@ -50,7 +50,7 @@
 <body>
   <h1>📬 Gmail Widget <small>Beta v0.1</small></h1>
   <div id="status">🔒 No autenticado</div>
-  <button id="login">Iniciar sesión con Google</button>
+  <button id="login" disabled>Iniciar sesión con Google</button>
 
   <div id="inbox" style="margin-top:20px;"></div>
 
@@ -68,56 +68,78 @@
     const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest';
 
-    document.getElementById('login').addEventListener('click', () => {
-      gapi.load('client:auth2', async () => {
-        await gapi.client.init({
-          apiKey: API_KEY,
-          clientId: CLIENT_ID,
-          discoveryDocs: [DISCOVERY_DOC],
-          scope: SCOPES
-        });
+    function start() {
+      document.getElementById('login').disabled = false;
+      document.getElementById('login').addEventListener('click', async () => {
+        try {
+          await gapi.client.init({
+            apiKey: API_KEY,
+            clientId: CLIENT_ID,
+            discoveryDocs: [DISCOVERY_DOC],
+            scope: SCOPES
+          });
 
-        const authInstance = gapi.auth2.getAuthInstance();
-        authInstance.signIn().then(() => {
-          document.getElementById('status').textContent = '✅ Autenticado';
-          listEmails();
-        });
+          const authInstance = gapi.auth2.getAuthInstance();
+          authInstance.signIn().then(() => {
+            document.getElementById('status').textContent = '✅ Autenticado';
+            listEmails();
+          }).catch(err => {
+            document.getElementById('status').textContent = '❌ Error de autenticación';
+            console.error(err);
+          });
+
+        } catch (error) {
+          console.error('Error en inicialización de cliente', error);
+        }
       });
-    });
+    }
 
     async function listEmails() {
-      const res = await gapi.client.gmail.users.messages.list({
-        userId: 'me',
-        maxResults: 5
-      });
-      const inbox = document.getElementById('inbox');
-      inbox.innerHTML = '<h3>📥 Correos recientes</h3>';
-      for (const msg of res.result.messages) {
-        const full = await gapi.client.gmail.users.messages.get({
+      try {
+        const res = await gapi.client.gmail.users.messages.list({
           userId: 'me',
-          id: msg.id
+          maxResults: 5
         });
-        const snippet = full.result.snippet;
-        inbox.innerHTML += `<div class="mail">${snippet}</div>`;
+
+        const inbox = document.getElementById('inbox');
+        inbox.innerHTML = '<h3>📥 Correos recientes</h3>';
+        for (const msg of res.result.messages) {
+          const full = await gapi.client.gmail.users.messages.get({
+            userId: 'me',
+            id: msg.id
+          });
+          const snippet = full.result.snippet;
+          inbox.innerHTML += `<div class="mail">${snippet}</div>`;
+        }
+      } catch (err) {
+        console.error('Error al listar correos', err);
+        document.getElementById('inbox').innerHTML = '⚠️ No se pudieron cargar los correos.';
       }
     }
 
     document.getElementById('send').addEventListener('click', async () => {
-      const to = document.getElementById('to').value;
-      const subject = document.getElementById('subject').value;
-      const body = document.getElementById('body').value;
-      const raw = btoa(
-        `To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`
-      ).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      await gapi.client.gmail.users.messages.send({
-        userId: 'me',
-        resource: {
-          raw: raw
-        }
-      });
-      alert('✅ Correo enviado');
+      try {
+        const to = document.getElementById('to').value;
+        const subject = document.getElementById('subject').value;
+        const body = document.getElementById('body').value;
+        const raw = btoa(
+          `To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`
+        ).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+        await gapi.client.gmail.users.messages.send({
+          userId: 'me',
+          resource: { raw }
+        });
+
+        alert('✅ Correo enviado');
+      } catch (err) {
+        alert('❌ Error al enviar correo');
+        console.error(err);
+      }
     });
   </script>
-  <script src="https://apis.google.com/js/api.js"></script>
+
+  <!-- Carga de la API de Google con callback de inicio -->
+  <script src="https://apis.google.com/js/api.js?onload=start"></script>
 </body>
 </html>
