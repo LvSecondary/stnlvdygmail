@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Gmail Widget – Beta v0.1</title>
+  <title>Gmail Widget – Beta v0.2</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -40,6 +40,10 @@
       border-radius: 4px;
       cursor: pointer;
     }
+    button:disabled {
+      background: #aaa;
+      cursor: not-allowed;
+    }
     small {
       display: block;
       margin-top: 15px;
@@ -48,8 +52,8 @@
   </style>
 </head>
 <body>
-  <h1>📬 Gmail Widget <small>Beta v0.1</small></h1>
-  <div id="status">🔒 No autenticado</div>
+  <h1>📬 Gmail Widget <small>Beta v0.2</small></h1>
+  <div id="status">🔒 Esperando autenticación...</div>
   <button id="login" disabled>Iniciar sesión con Google</button>
 
   <div id="inbox" style="margin-top:20px;"></div>
@@ -60,7 +64,7 @@
   <textarea id="body" rows="5" placeholder="Mensaje"></textarea>
   <button id="send">Enviar</button>
 
-  <small>Beta v0.1 • Usa una cuenta autorizada por OAuth2</small>
+  <small>Beta v0.2 • Autenticación con OAuth2</small>
 
   <script>
     const API_KEY = 'AIzaSyDFz7dA4Lh9NCo6gPPrbD_PHw4N4vi26jQ';
@@ -68,29 +72,37 @@
     const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
     const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest';
 
-    function start() {
-      document.getElementById('login').disabled = false;
-      document.getElementById('login').addEventListener('click', async () => {
-        try {
-          await gapi.client.init({
-            apiKey: API_KEY,
-            clientId: CLIENT_ID,
-            discoveryDocs: [DISCOVERY_DOC],
-            scope: SCOPES
-          });
+    function initClient() {
+      console.log("🔃 Inicializando cliente...");
+      gapi.client.init({
+        apiKey: API_KEY,
+        clientId: CLIENT_ID,
+        discoveryDocs: [DISCOVERY_DOC],
+        scope: SCOPES
+      }).then(() => {
+        console.log("✅ Cliente inicializado");
+        const authInstance = gapi.auth2.getAuthInstance();
+        document.getElementById('login').disabled = false;
 
-          const authInstance = gapi.auth2.getAuthInstance();
+        if (authInstance.isSignedIn.get()) {
+          document.getElementById('status').textContent = '✅ Autenticado';
+          listEmails();
+        }
+
+        document.getElementById('login').onclick = () => {
+          console.log("🚀 Iniciando sesión...");
           authInstance.signIn().then(() => {
+            console.log("🟢 Sesión iniciada");
             document.getElementById('status').textContent = '✅ Autenticado';
             listEmails();
           }).catch(err => {
-            document.getElementById('status').textContent = '❌ Error de autenticación';
-            console.error(err);
+            console.error("❌ Error al iniciar sesión:", err);
+            alert("Error al iniciar sesión. Revisa la consola.");
           });
-
-        } catch (error) {
-          console.error('Error en inicialización de cliente', error);
-        }
+        };
+      }).catch(err => {
+        console.error("❌ Error al inicializar cliente:", err);
+        alert("Error al inicializar cliente. Revisa la consola.");
       });
     }
 
@@ -100,7 +112,6 @@
           userId: 'me',
           maxResults: 5
         });
-
         const inbox = document.getElementById('inbox');
         inbox.innerHTML = '<h3>📥 Correos recientes</h3>';
         for (const msg of res.result.messages) {
@@ -112,34 +123,40 @@
           inbox.innerHTML += `<div class="mail">${snippet}</div>`;
         }
       } catch (err) {
-        console.error('Error al listar correos', err);
-        document.getElementById('inbox').innerHTML = '⚠️ No se pudieron cargar los correos.';
+        console.error("❌ Error al listar correos:", err);
       }
     }
 
     document.getElementById('send').addEventListener('click', async () => {
-      try {
-        const to = document.getElementById('to').value;
-        const subject = document.getElementById('subject').value;
-        const body = document.getElementById('body').value;
-        const raw = btoa(
-          `To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`
-        ).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const to = document.getElementById('to').value;
+      const subject = document.getElementById('subject').value;
+      const body = document.getElementById('body').value;
 
+      const raw = btoa(
+        `To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`
+      ).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+      try {
         await gapi.client.gmail.users.messages.send({
           userId: 'me',
-          resource: { raw }
+          resource: {
+            raw: raw
+          }
         });
-
         alert('✅ Correo enviado');
       } catch (err) {
-        alert('❌ Error al enviar correo');
-        console.error(err);
+        console.error("❌ Error al enviar correo:", err);
+        alert("Error al enviar correo. Revisa la consola.");
       }
     });
   </script>
 
-  <!-- Carga de la API de Google con callback de inicio -->
+  <script>
+    function start() {
+      console.log("🌐 Cargando librería gapi...");
+      gapi.load('client:auth2', initClient);
+    }
+  </script>
   <script src="https://apis.google.com/js/api.js?onload=start"></script>
 </body>
 </html>
