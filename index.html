@@ -2,161 +2,89 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Gmail Widget – Beta v0.2</title>
+  <title>Gmail Widget - beta v0.2</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 10px;
-      background: #f7f7f7;
-    }
-    h1 {
-      font-size: 1.2em;
-      margin-bottom: 10px;
-    }
-    #status {
-      color: green;
-      font-size: 0.9em;
-    }
-    .mail {
-      background: white;
-      margin: 5px 0;
-      padding: 8px;
-      border-radius: 5px;
-      box-shadow: 0 0 5px #ccc;
-    }
-    textarea, input {
-      width: 100%;
-      margin: 5px 0;
-      padding: 6px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-    }
-    button {
-      padding: 6px 12px;
-      margin-top: 5px;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:disabled {
-      background: #aaa;
-      cursor: not-allowed;
-    }
-    small {
-      display: block;
-      margin-top: 15px;
-      color: #999;
-    }
+    body { font-family: sans-serif; padding: 1rem; background: #111; color: #eee; }
+    #emails { margin-top: 1rem; }
+    .email { border-bottom: 1px solid #444; padding: 0.5rem 0; }
+    button { padding: 0.5rem 1rem; }
   </style>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-  <h1>📬 Gmail Widget <small>Beta v0.2</small></h1>
-  <div id="status">🔒 Esperando autenticación...</div>
-  <button id="login" disabled>Iniciar sesión con Google</button>
+  <h2>📬 Gmail Widget <small>(beta v0.3)</small></h2>
+  <div id="g_id_onload"
+       data-client_id="668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com"
+       data-callback="handleCredentialResponse"
+       data-auto_prompt="false"
+       data-scope="https://www.googleapis.com/auth/gmail.readonly">
+  </div>
+  <div class="g_id_signin"
+       data-type="standard"
+       data-theme="outline"
+       data-size="large"
+       data-text="sign_in_with"
+       data-shape="rectangular"
+       data-logo_alignment="left">
+  </div>
 
-  <div id="inbox" style="margin-top:20px;"></div>
-
-  <h3>Enviar correo</h3>
-  <input type="text" id="to" placeholder="Destinatario">
-  <input type="text" id="subject" placeholder="Asunto">
-  <textarea id="body" rows="5" placeholder="Mensaje"></textarea>
-  <button id="send">Enviar</button>
-
-  <small>Beta v0.2 • Autenticación con OAuth2</small>
+  <div id="emails"></div>
 
   <script>
-    const API_KEY = 'AIzaSyDFz7dA4Lh9NCo6gPPrbD_PHw4N4vi26jQ';
-    const CLIENT_ID = '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com';
-    const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send';
-    const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest';
+    let token = null;
 
-    function initClient() {
-      console.log("🔃 Inicializando cliente...");
-      gapi.client.init({
-        apiKey: API_KEY,
-        clientId: CLIENT_ID,
-        discoveryDocs: [DISCOVERY_DOC],
-        scope: SCOPES
-      }).then(() => {
-        console.log("✅ Cliente inicializado");
-        const authInstance = gapi.auth2.getAuthInstance();
-        document.getElementById('login').disabled = false;
+    function handleCredentialResponse(response) {
+      token = response.credential;
 
-        if (authInstance.isSignedIn.get()) {
-          document.getElementById('status').textContent = '✅ Autenticado';
-          listEmails();
-        }
+      // Intercambiar por token de acceso
+      fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com',
+          code: response.code,
+          redirect_uri: 'https://lvsecondary.github.io',
+          code_verifier: '' // si estás usando PKCE, debes incluirlo aquí
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        token = data.access_token;
+        fetchEmails();
+        setInterval(fetchEmails, 10000);
+      })
+      .catch(err => console.error('Error al obtener token de acceso:', err));
+    }
 
-        document.getElementById('login').onclick = () => {
-          console.log("🚀 Iniciando sesión...");
-          authInstance.signIn().then(() => {
-            console.log("🟢 Sesión iniciada");
-            document.getElementById('status').textContent = '✅ Autenticado';
-            listEmails();
-          }).catch(err => {
-            console.error("❌ Error al iniciar sesión:", err);
-            alert("Error al iniciar sesión. Revisa la consola.");
+    function fetchEmails() {
+      if (!token) return;
+
+      fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        const emailList = document.getElementById('emails');
+        emailList.innerHTML = '';
+        const ids = data.messages.map(msg => msg.id);
+
+        ids.forEach(id => {
+          fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+          .then(res => res.json())
+          .then(msg => {
+            const subjectHeader = msg.payload.headers.find(h => h.name === 'Subject');
+            const fromHeader = msg.payload.headers.find(h => h.name === 'From');
+            const el = document.createElement('div');
+            el.className = 'email';
+            el.innerHTML = `<b>${subjectHeader?.value || '(Sin asunto)'}</b><br><small>${fromHeader?.value || ''}</small>`;
+            emailList.appendChild(el);
           });
-        };
-      }).catch(err => {
-        console.error("❌ Error al inicializar cliente:", err);
-        alert("Error al inicializar cliente. Revisa la consola.");
+        });
       });
     }
-
-    async function listEmails() {
-      try {
-        const res = await gapi.client.gmail.users.messages.list({
-          userId: 'me',
-          maxResults: 5
-        });
-        const inbox = document.getElementById('inbox');
-        inbox.innerHTML = '<h3>📥 Correos recientes</h3>';
-        for (const msg of res.result.messages) {
-          const full = await gapi.client.gmail.users.messages.get({
-            userId: 'me',
-            id: msg.id
-          });
-          const snippet = full.result.snippet;
-          inbox.innerHTML += `<div class="mail">${snippet}</div>`;
-        }
-      } catch (err) {
-        console.error("❌ Error al listar correos:", err);
-      }
-    }
-
-    document.getElementById('send').addEventListener('click', async () => {
-      const to = document.getElementById('to').value;
-      const subject = document.getElementById('subject').value;
-      const body = document.getElementById('body').value;
-
-      const raw = btoa(
-        `To: ${to}\r\nSubject: ${subject}\r\n\r\n${body}`
-      ).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-      try {
-        await gapi.client.gmail.users.messages.send({
-          userId: 'me',
-          resource: {
-            raw: raw
-          }
-        });
-        alert('✅ Correo enviado');
-      } catch (err) {
-        console.error("❌ Error al enviar correo:", err);
-        alert("Error al enviar correo. Revisa la consola.");
-      }
-    });
   </script>
-
-  <script>
-    function start() {
-      console.log("🌐 Cargando librería gapi...");
-      gapi.load('client:auth2', initClient);
-    }
-  </script>
-  <script src="https://apis.google.com/js/api.js?onload=start"></script>
 </body>
 </html>
