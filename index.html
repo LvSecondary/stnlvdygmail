@@ -1,85 +1,72 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <title>Gmail Widget - beta v0.2</title>
+  <meta charset="UTF-8">
+  <title>Gmail Widget – beta v0.3</title>
   <style>
-    body { font-family: sans-serif; padding: 1rem; background: #111; color: #eee; }
-    #emails { margin-top: 1rem; }
-    .email { border-bottom: 1px solid #444; padding: 0.5rem 0; }
-    button { padding: 0.5rem 1rem; }
+    body { font-family: sans-serif; background: #111; color: #eee; padding: 1rem; }
+    button { padding: 0.5rem 1rem; background: #333; border: none; color: white; cursor: pointer; margin-top: 1rem; }
+    .email { border-bottom: 1px solid #444; margin: 1rem 0; padding-bottom: 0.5rem; }
   </style>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <h2>📬 Gmail Widget <small>(beta v0.3)</small></h2>
-  <div id="g_id_onload"
-       data-client_id="668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com"
-       data-callback="handleCredentialResponse"
-       data-auto_prompt="false"
-       data-scope="https://www.googleapis.com/auth/gmail.readonly">
-  </div>
-  <div class="g_id_signin"
-       data-type="standard"
-       data-theme="outline"
-       data-size="large"
-       data-text="sign_in_with"
-       data-shape="rectangular"
-       data-logo_alignment="left">
-  </div>
+
+  <button onclick="getToken()">🔓 Conectar con Gmail</button>
 
   <div id="emails"></div>
 
   <script>
-    let token = null;
+    let tokenClient;
+    let accessToken = null;
 
-    function handleCredentialResponse(response) {
-      token = response.credential;
+    window.onload = () => {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com',
+        scope: 'https://www.googleapis.com/auth/gmail.readonly',
+        callback: (tokenResponse) => {
+          accessToken = tokenResponse.access_token;
+          fetchEmails();
+          setInterval(fetchEmails, 10000);
+        }
+      });
+    };
 
-      // Intercambiar por token de acceso
-      fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com',
-          code: response.code,
-          redirect_uri: 'https://lvsecondary.github.io',
-          code_verifier: '' // si estás usando PKCE, debes incluirlo aquí
-        })
-      })
-      .then(res => res.json())
-      .then(data => {
-        token = data.access_token;
-        fetchEmails();
-        setInterval(fetchEmails, 10000);
-      })
-      .catch(err => console.error('Error al obtener token de acceso:', err));
+    function getToken() {
+      tokenClient.requestAccessToken();
     }
 
     function fetchEmails() {
-      if (!token) return;
+      if (!accessToken) return;
 
       fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5', {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
       })
       .then(res => res.json())
       .then(data => {
         const emailList = document.getElementById('emails');
         emailList.innerHTML = '';
-        const ids = data.messages.map(msg => msg.id);
 
-        ids.forEach(id => {
-          fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata`, {
-            headers: { Authorization: `Bearer ${token}` }
+        if (!data.messages || data.messages.length === 0) {
+          emailList.innerHTML = '<p>No hay correos recientes.</p>';
+          return;
+        }
+
+        data.messages.forEach(msg => {
+          fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
           })
           .then(res => res.json())
-          .then(msg => {
-            const subjectHeader = msg.payload.headers.find(h => h.name === 'Subject');
-            const fromHeader = msg.payload.headers.find(h => h.name === 'From');
+          .then(msgData => {
+            const headers = msgData.payload.headers;
+            const subject = headers.find(h => h.name === 'Subject')?.value || '(Sin asunto)';
+            const from = headers.find(h => h.name === 'From')?.value || '';
             const el = document.createElement('div');
             el.className = 'email';
-            el.innerHTML = `<b>${subjectHeader?.value || '(Sin asunto)'}</b><br><small>${fromHeader?.value || ''}</small>`;
+            el.innerHTML = `<strong>${subject}</strong><br><small>${from}</small>`;
             emailList.appendChild(el);
           });
         });
