@@ -126,7 +126,7 @@
         callback: (tokenResponse) => {
           accessToken = tokenResponse.access_token;
           fetchEmails();
-          setInterval(fetchEmails, 10000);
+          setInterval(fetchEmails, 30000);
         }
       });
 
