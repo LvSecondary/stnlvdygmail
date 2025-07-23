@@ -2,285 +2,209 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <title>Gmail Widget – Beta v0.6</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📬 Gmail Widget - v0.7</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     body {
+      background-color: #1e1e1e;
+      color: #f0f0f0;
       font-family: 'Segoe UI', sans-serif;
-      background: #1e1e1e;
-      color: #e0e0e0;
-      margin: 0;
       padding: 1rem;
+      margin: 0;
     }
-
-    h2 {
-      font-size: 1.2rem;
+    h1 {
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+    .widget-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 1rem;
     }
-
-    button, input[type="text"] {
-      background-color: #2e2e2e;
-      border: none;
-      color: white;
-      padding: 0.6rem 1rem;
-      border-radius: 5px;
-      margin-bottom: 0.5rem;
-      margin-right: 0.5rem;
-    }
-
-    input[type="text"] {
-      width: 60%;
-    }
-
-    .email {
+    button {
       background: #2a2a2a;
-      border-radius: 6px;
-      margin-bottom: 0.8rem;
-      padding: 1rem;
-      cursor: pointer;
-      transition: background 0.3s ease;
-    }
-
-    .email:hover {
-      background: #333;
-    }
-
-    .subject {
-      font-weight: bold;
-      font-size: 1rem;
-    }
-
-    .from {
-      font-size: 0.85rem;
-      color: #ccc;
-    }
-
-    .body {
-      margin-top: 0.5rem;
-      font-size: 0.9rem;
-      color: #aaa;
-      white-space: pre-wrap;
-      display: none;
-    }
-
-    .body a {
-      color: #80bfff;
-      text-decoration: underline;
-    }
-
-    .expanded .body {
-      display: block;
-    }
-
-    .attachments img {
-      max-width: 100%;
-      margin-top: 0.5rem;
-      border-radius: 4px;
-    }
-
-    .reply-box {
-      margin-top: 0.5rem;
-      display: none;
-    }
-
-    .reply-box textarea {
-      width: 100%;
-      height: 80px;
-      background: #1e1e1e;
-      color: white;
+      color: #fff;
       border: 1px solid #444;
+      padding: 0.5rem 1rem;
       border-radius: 4px;
+      cursor: pointer;
+      margin-left: 0.5rem;
+    }
+    button:hover {
+      background: #444;
+    }
+    input {
+      background: #2a2a2a;
+      color: #fff;
+      border: 1px solid #555;
       padding: 0.5rem;
+      border-radius: 4px;
+      width: 100%;
+      margin-bottom: 1rem;
+    }
+    .email {
+      background-color: #2b2b2b;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
+    .email:hover {
+      background-color: #333;
+    }
+    .email-subject {
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+    .email-body {
       margin-top: 0.5rem;
     }
-
-    .reply-box button {
-      margin-top: 0.5rem;
-      background-color: #3a3a3a;
+    .email a {
+      color: #70c0ff;
+      word-break: break-word;
     }
-
     .version {
-      position: fixed;
-      bottom: 10px;
-      right: 15px;
-      font-size: 0.75rem;
-      color: #666;
+      font-size: 0.8rem;
+      text-align: right;
+      opacity: 0.5;
+    }
+    .account-selector {
+      margin-bottom: 1rem;
     }
   </style>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
-  <h2>📬 Gmail Widget</h2>
-  <input type="text" id="searchInput" placeholder="Buscar por asunto o remitente">
-  <button onclick="getToken()">🔓 Conectar</button>
-  <button onclick="fetchEmails()">🔄 Refrescar</button>
-  <button onclick="nextPage()">➡️ Más correos</button>
-
+  <h1>📬 Gmail Widget</h1>
+  <div class="widget-header">
+    <input type="text" id="searchInput" placeholder="Buscar por asunto o remitente...">
+    <div>
+      <button onclick="fetchEmails()">🔄 Refrescar</button>
+      <button onclick="switchAccount()">👥 Cambiar cuenta</button>
+    </div>
+  </div>
+  <div class="account-selector" id="accountSelector"></div>
   <div id="emails"></div>
-
-  <div class="version">beta v0.6</div>
+  <div class="version">beta v0.7</div>
 
   <script>
     let tokenClient;
     let accessToken = null;
-    let nextPageToken = null;
-    let currentUserEmail = null;
+    let userEmail = null;
 
-    window.onload = () => {
-      tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com',
-        scope: 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/userinfo.email',
-        prompt: '', // ⚡ No volver a preguntar
-        callback: (tokenResponse) => {
-          accessToken = tokenResponse.access_token;
-          fetchEmails();
-        }
-      });
-
-      document.getElementById('searchInput').addEventListener('input', () => {
-        fetchEmails();
-      });
-
-      // 🔄 Auto-refresh cada 5 minutos
-      setInterval(() => {
-        if (accessToken) fetchEmails();
-      }, 300000);
-    };
-
-    function getToken() {
-      tokenClient.requestAccessToken();
+    function getToken(force = false) {
+      tokenClient.requestAccessToken({ prompt: force ? 'consent' : 'none' });
     }
 
-    function fetchEmails(pageToken = '') {
+    function switchAccount() {
+      getToken(true);
+    }
+
+    function fetchEmails() {
       if (!accessToken) return;
-
-      const query = document.getElementById('searchInput').value;
-      const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q=${encodeURIComponent(query)}${pageToken ? `&pageToken=${pageToken}` : ''}`;
-
-      fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+      const searchQuery = document.getElementById('searchInput').value.toLowerCase();
+      fetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q=', {
+        headers: { Authorization: 'Bearer ' + accessToken }
       })
       .then(res => res.json())
       .then(data => {
-        const emailList = document.getElementById('emails');
-        if (!pageToken) emailList.innerHTML = '';
-        nextPageToken = data.nextPageToken || null;
-
-        if (!data.messages) {
-          emailList.innerHTML = '<p>No hay correos que coincidan.</p>';
-          return;
-        }
-
+        if (!data.messages) return;
+        const emailsContainer = document.getElementById('emails');
+        emailsContainer.innerHTML = '';
         data.messages.forEach(msg => {
-          fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
+          fetch(`https://www.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`, {
+            headers: { Authorization: 'Bearer ' + accessToken }
           })
           .then(res => res.json())
-          .then(msgData => {
-            const headers = msgData.payload.headers;
-            const subject = headers.find(h => h.name === 'Subject')?.value || '(Sin asunto)';
+          .then(email => {
+            const headers = email.payload.headers;
             const from = headers.find(h => h.name === 'From')?.value || '';
-            const bodyData = getBody(msgData.payload);
-            const emailEl = document.createElement('div');
-            emailEl.className = 'email';
-            emailEl.innerHTML = `
-              <div class="subject">${sanitize(subject)}</div>
-              <div class="from">${sanitize(from)}</div>
-              <div class="body">${linkify(sanitize(bodyData))}</div>
-              <div class="attachments">${getImages(msgData.payload)}</div>
-              <div class="reply-box">
-                <textarea placeholder="Escribe tu respuesta..."></textarea>
-                <button>Responder</button>
-              </div>
-            `;
+            const subject = headers.find(h => h.name === 'Subject')?.value || '(Sin asunto)';
+            const bodyData = getBody(email.payload);
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(bodyData, 'text/html');
+            const text = htmlDoc.body.innerHTML;
 
-            emailEl.querySelector('button').addEventListener('click', () => {
-              const text = emailEl.querySelector('textarea').value;
-              sendReply(from, subject, text);
-            });
-
-            emailEl.addEventListener('click', () => {
-              emailEl.classList.toggle('expanded');
-              emailEl.querySelector('.reply-box').style.display = 
-                emailEl.classList.contains('expanded') ? 'block' : 'none';
-            });
-
-            emailList.appendChild(emailEl);
+            if (subject.toLowerCase().includes(searchQuery) || from.toLowerCase().includes(searchQuery)) {
+              const emailDiv = document.createElement('div');
+              emailDiv.className = 'email';
+              emailDiv.innerHTML = `
+                <div class="email-subject">${subject}</div>
+                <div class="email-from"><strong>De:</strong> ${from}</div>
+                <div class="email-body">${text}</div>
+              `;
+              emailsContainer.appendChild(emailDiv);
+            }
           });
         });
       });
     }
 
-    function nextPage() {
-      if (nextPageToken) fetchEmails(nextPageToken);
-    }
-
-    function sendReply(to, subject, body) {
-      const raw = btoa(
-        `To: ${to}\nSubject: Re: ${subject}\n\n${body}`
-      ).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-      fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ raw })
-      }).then(() => alert('Respuesta enviada.'));
-    }
-
     function getBody(payload) {
-      if (payload.parts) {
-        for (const part of payload.parts) {
-          if (part.mimeType === 'text/plain' && part.body?.data) {
-            return decodeBase64(part.body.data);
-          }
-          if (part.mimeType === 'text/html' && part.body?.data) {
-            return stripHTML(decodeBase64(part.body.data));
-          }
+      if (!payload.parts) {
+        return atob(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'));
+      }
+      for (let part of payload.parts) {
+        if (part.mimeType === 'text/html') {
+          return atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'));
         }
       }
-      if (payload.body?.data) {
-        return decodeBase64(payload.body.data);
+      return '(Sin contenido HTML)';
+    }
+
+    function decodeHTMLEntities(text) {
+      const textarea = document.createElement('textarea');
+      textarea.innerHTML = text;
+      return textarea.value;
+    }
+
+    window.onload = () => {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com',
+        scope: 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email',
+        prompt: 'none',
+        callback: (tokenResponse) => {
+          accessToken = tokenResponse.access_token;
+          const expiresAt = Date.now() + (tokenResponse.expires_in * 1000);
+          localStorage.setItem('gmail_token', accessToken);
+          localStorage.setItem('gmail_expires', expiresAt);
+          fetchUserInfo();
+        }
+      });
+
+      const savedToken = localStorage.getItem('gmail_token');
+      const savedExpires = parseInt(localStorage.getItem('gmail_expires') || '0');
+      if (savedToken && savedExpires > Date.now()) {
+        accessToken = savedToken;
+        fetchUserInfo();
+      } else {
+        getToken();
       }
-      return '(Sin contenido)';
-    }
 
-    function getImages(payload) {
-      let images = '';
-      if (payload.parts) {
-        payload.parts.forEach(part => {
-          if (part.mimeType?.startsWith('image/') && part.body?.data) {
-            const imgSrc = `data:${part.mimeType};base64,${part.body.data}`;
-            images += `<img src="${imgSrc}">`;
-          }
-        });
-      }
-      return images;
-    }
+      setInterval(() => {
+        const now = Date.now();
+        const savedToken = localStorage.getItem('gmail_token');
+        const savedExpires = parseInt(localStorage.getItem('gmail_expires') || '0');
+        if (savedToken && savedExpires > now) {
+          accessToken = savedToken;
+          fetchEmails();
+        }
+      }, 300000);
 
-    function decodeBase64(data) {
-      try {
-        const decoded = atob(data.replace(/-/g, '+').replace(/_/g, '/'));
-        return decodeURIComponent(escape(decoded)); // Corrige acentos
-      } catch {
-        return '(Contenido no disponible)';
-      }
-    }
+      document.getElementById('searchInput').addEventListener('input', fetchEmails);
+    };
 
-    function sanitize(str) {
-      return str.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
-    function stripHTML(html) {
-      const div = document.createElement("div");
-      div.innerHTML = html;
-      return div.textContent || div.innerText || "";
-    }
-
-    function linkify(text) {
-      const urlRegex = /(https?:\/\/[^\s]+)/g;
-      return text.replace(urlRegex, url => `<a href="${url}" target="_blank">${url}</a>`);
+    function fetchUserInfo() {
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      })
+      .then(res => res.json())
+      .then(user => {
+        userEmail = user.email;
+        document.getElementById('accountSelector').innerText = "Sesión actual: " + userEmail;
+        fetchEmails();
+      });
     }
   </script>
 </body>
