@@ -3,194 +3,196 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Gmail Widget v0.9</title>
+  <title>📧 Gmail Widget v1.0</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     body {
-      background-color: #1e1e1e;
-      color: white;
-      font-family: 'Segoe UI', sans-serif;
-      margin: 0;
-      padding: 20px;
+      background-color: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      padding: 10px;
     }
-    h2 { margin-top: 0; }
-    button {
-      background: #3a3a3a;
-      border: none;
-      color: white;
-      padding: 10px 15px;
-      margin: 5px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover { background: #555; }
-    .email-list {
-      margin-top: 20px;
-    }
-    .email-item {
-      background-color: #2c2c2c;
-      padding: 15px;
+    h1 {
+      font-size: 1.2rem;
       margin-bottom: 10px;
+    }
+    button {
+      background-color: #333;
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      margin: 5px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #444;
+    }
+    .email {
+      background: #222;
+      margin: 8px 0;
+      padding: 10px;
       border-radius: 6px;
       cursor: pointer;
     }
-    .email-subject {
+    .email:hover {
+      background-color: #333;
+    }
+    .email-title {
       font-weight: bold;
+      margin-bottom: 5px;
     }
     .email-body {
-      margin-top: 10px;
       display: none;
+      margin-top: 5px;
+      white-space: pre-wrap;
     }
-    .account-selector {
-      margin: 10px 0;
+    .account-buttons {
+      margin-bottom: 10px;
     }
     a {
-      color: #4da6ff;
-      word-break: break-word;
+      color: #4EA5EC;
+      text-decoration: underline;
     }
-    iframe {
+    img {
       max-width: 100%;
+      margin-top: 5px;
+      border-radius: 4px;
     }
   </style>
 </head>
 <body>
-  <h2>📬 Gmail Widget <small style="opacity:0.5;">v0.9</small></h2>
-  <button onclick="handleAuthClick()">Iniciar sesión con Google</button>
-  <button onclick="fetchEmails()">🔄 Refrescar</button>
-  <select id="accountSelect" class="account-selector" onchange="switchAccount()"></select>
-  <div class="email-list" id="emailList">Cargando correos...</div>
+  <h1>📨 Widget Gmail v1.0</h1>
+  <div class="account-buttons" id="accountButtons"></div>
+  <div id="g_id_onload"
+       data-client_id="TU_CLIENT_ID_AQUI"
+       data-auto_prompt="false"
+       data-callback="onSignIn">
+  </div>
+  <div class="g_id_signin"
+       data-type="standard"
+       data-shape="rectangular"
+       data-theme="filled_black"
+       data-text="signin_with"
+       data-size="large"
+       data-logo_alignment="left">
+  </div>
+  <button onclick="refreshEmails()">🔄 Actualizar</button>
+  <div id="emails"></div>
 
   <script>
-    const CLIENT_ID = '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com';
-    const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly';
-    let accessToken = null;
-    let activeAccount = null;
+    const accounts = {};
+    let currentAccount = null;
 
-    function updateAccountSelector() {
-      const select = document.getElementById("accountSelect");
-      select.innerHTML = "";
-      const tokens = JSON.parse(localStorage.getItem("gmail_tokens") || "{}");
-      Object.keys(tokens).forEach(email => {
-        const option = document.createElement("option");
-        option.value = email;
-        option.textContent = email;
-        if (email === activeAccount) option.selected = true;
-        select.appendChild(option);
-      });
-    }
+    function onSignIn(response) {
+      const credential = response.credential;
+      const payload = JSON.parse(atob(credential.split('.')[1]));
+      const email = payload.email;
 
-    function switchAccount() {
-      const email = document.getElementById("accountSelect").value;
-      const tokens = JSON.parse(localStorage.getItem("gmail_tokens") || "{}");
-      accessToken = tokens[email];
-      activeAccount = email;
-      fetchEmails();
-    }
-
-    function handleAuthClick() {
-      const redirectUri = window.location.origin + window.location.pathname;
-      const oauthURL = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&response_type=token&scope=${SCOPES}`;
-
-      const popup = window.open(oauthURL, "authPopup", "width=500,height=600");
-
-      const pollTimer = setInterval(() => {
-        try {
-          if (!popup || popup.closed) {
-            clearInterval(pollTimer);
-          } else if (popup.location.href.startsWith(redirectUri)) {
-            const hash = popup.location.hash.substr(1);
-            const params = new URLSearchParams(hash);
-            accessToken = params.get("access_token");
-            popup.close();
-            clearInterval(pollTimer);
-            getUserEmail(accessToken).then(email => {
-              const tokens = JSON.parse(localStorage.getItem("gmail_tokens") || "{}");
-              tokens[email] = accessToken;
-              localStorage.setItem("gmail_tokens", JSON.stringify(tokens));
-              activeAccount = email;
-              updateAccountSelector();
-              fetchEmails();
-            });
-          }
-        } catch (e) {}
-      }, 500);
-    }
-
-    async function getUserEmail(token) {
-      const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      return data.email;
-    }
-
-    async function fetchEmails() {
-      if (!accessToken) return;
-      const res = await fetch('https://www.googleapis.com/gmail/v1/users/me/messages?maxResults=10', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const data = await res.json();
-      const emails = await Promise.all((data.messages || []).map(msg => getEmail(msg.id)));
-      displayEmails(emails);
-    }
-
-    async function getEmail(id) {
-      const res = await fetch(`https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const data = await res.json();
-      const subjectHeader = data.payload.headers.find(h => h.name === 'Subject');
-      const fromHeader = data.payload.headers.find(h => h.name === 'From');
-      const subject = subjectHeader?.value || '(Sin asunto)';
-      const from = fromHeader?.value || '(Desconocido)';
-      let body = '';
-
-      function parsePart(part) {
-        if (part.mimeType === 'text/html' && part.body.data) {
-          body = decodeURIComponent(escape(window.atob(part.body.data.replace(/-/g, '+').replace(/_/g, '/'))));
-        } else if (part.parts) {
-          part.parts.forEach(parsePart);
-        }
+      if (!accounts[email]) {
+        accounts[email] = { credential };
+        const btn = document.createElement('button');
+        btn.textContent = email;
+        btn.onclick = () => {
+          currentAccount = email;
+          refreshEmails();
+        };
+        document.getElementById('accountButtons').appendChild(btn);
       }
 
-      parsePart(data.payload);
-      return { subject, from, body };
+      currentAccount = email;
+      localStorage.setItem('gmail_tokens', JSON.stringify(accounts));
+      refreshEmails();
     }
 
-    function displayEmails(emails) {
-      const container = document.getElementById("emailList");
-      container.innerHTML = "";
-      emails.forEach(email => {
-        const item = document.createElement("div");
-        item.className = "email-item";
+    function loadStoredAccounts() {
+      const stored = localStorage.getItem('gmail_tokens');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        for (let email in parsed) {
+          accounts[email] = parsed[email];
+          const btn = document.createElement('button');
+          btn.textContent = email;
+          btn.onclick = () => {
+            currentAccount = email;
+            refreshEmails();
+          };
+          document.getElementById('accountButtons').appendChild(btn);
+        }
+        currentAccount = Object.keys(parsed)[0];
+        refreshEmails();
+      }
+    }
 
-        const subject = document.createElement("div");
-        subject.className = "email-subject";
-        subject.innerHTML = `${email.subject} <br><small>${email.from}</small>`;
-        item.appendChild(subject);
+    async function refreshEmails() {
+      if (!currentAccount) return;
 
-        const body = document.createElement("div");
-        body.className = "email-body";
-        body.innerHTML = email.body;
-        item.appendChild(body);
+      document.getElementById('emails').innerHTML = "<p>Cargando correos...</p>";
 
-        item.addEventListener("click", () => {
-          body.style.display = body.style.display === "none" ? "block" : "none";
+      try {
+        const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10', {
+          headers: {
+            Authorization: `Bearer ${accounts[currentAccount].access_token}`
+          }
         });
 
-        container.appendChild(item);
-      });
+        const data = await response.json();
+
+        const emailContainer = document.getElementById('emails');
+        emailContainer.innerHTML = '';
+
+        for (let msg of data.messages || []) {
+          const emailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`, {
+            headers: {
+              Authorization: `Bearer ${accounts[currentAccount].access_token}`
+            }
+          });
+          const emailData = await emailRes.json();
+          const headers = emailData.payload.headers;
+          const subject = headers.find(h => h.name === 'Subject')?.value || '(Sin asunto)';
+          const from = headers.find(h => h.name === 'From')?.value || '';
+          const parts = emailData.payload.parts || [];
+          let body = '';
+
+          function decodeBase64(input) {
+            return decodeURIComponent(escape(atob(input.replace(/-/g, '+').replace(/_/g, '/'))));
+          }
+
+          for (let part of parts) {
+            if (part.mimeType === 'text/html' || part.mimeType === 'text/plain') {
+              if (part.body.data) {
+                body = decodeBase64(part.body.data);
+                break;
+              }
+            }
+          }
+
+          const emailDiv = document.createElement('div');
+          emailDiv.className = 'email';
+
+          const title = document.createElement('div');
+          title.className = 'email-title';
+          title.innerHTML = `<strong>${subject}</strong> <br><small>${from}</small>`;
+          emailDiv.appendChild(title);
+
+          const bodyDiv = document.createElement('div');
+          bodyDiv.className = 'email-body';
+          bodyDiv.innerHTML = body;
+
+          title.addEventListener('click', () => {
+            bodyDiv.style.display = bodyDiv.style.display === 'none' ? 'block' : 'none';
+          });
+
+          emailDiv.appendChild(bodyDiv);
+          emailContainer.appendChild(emailDiv);
+        }
+      } catch (err) {
+        document.getElementById('emails').innerHTML = `<p style="color:red;">Error al cargar emails: ${err.message}</p>`;
+      }
     }
 
     window.onload = () => {
-      const tokens = JSON.parse(localStorage.getItem("gmail_tokens") || "{}");
-      const emails = Object.keys(tokens);
-      if (emails.length > 0) {
-        accessToken = tokens[emails[0]];
-        activeAccount = emails[0];
-        updateAccountSelector();
-        fetchEmails();
-      }
-      setInterval(fetchEmails, 300000); // cada 5 minutos
+      loadStoredAccounts();
     };
   </script>
 </body>
