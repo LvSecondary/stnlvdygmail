@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8">
   <title>Gmail Widget v1.2</title>
   <style>
     body {
@@ -12,188 +11,174 @@
       margin: 20px;
     }
     button {
-      margin: 5px;
-      padding: 8px 12px;
       background-color: #1a73e8;
-      border: none;
       color: white;
-      border-radius: 5px;
+      border: none;
+      padding: 10px;
+      margin: 5px;
       cursor: pointer;
     }
-    .email-header {
+    .email {
+      background-color: #1e1e1e;
+      border: 1px solid #333;
+      margin: 5px 0;
+      padding: 10px;
       cursor: pointer;
-      font-weight: bold;
-      margin-top: 10px;
-      padding: 8px;
-      background-color: #333;
-      border-radius: 4px;
     }
     .email-body {
       display: none;
-      margin: 5px 0 15px 10px;
-      background-color: #1e1e1e;
-      padding: 10px;
-      border-radius: 4px;
+      margin-top: 5px;
       white-space: pre-wrap;
     }
     a {
-      color: #64b5f6;
+      color: #4fc3f7;
     }
-    #userEmail {
-      font-weight: bold;
-      color: #bbdefb;
-    }
-    img {
-      max-width: 100%;
-      margin-top: 10px;
-      border-radius: 4px;
+    .account-btn {
+      background-color: #333;
     }
   </style>
 </head>
 <body>
-  <h2>📬 Gmail Widget <span style="font-size: 14px;">v1.2</span></h2>
-  <div>
-    <button onclick="startPopupLogin()">Iniciar sesión con Google</button>
-    <button onclick="refreshMails()">🔄 Actualizar</button>
-    <span>Cuenta: <span id="userEmail">No iniciada</span></span>
-    <div id="accountSwitchButtons"></div>
-  </div>
-  <div id="emails"></div>
+  <h2>📩 Gmail Widget v1.2</h2>
+  <div id="account-info"></div>
+  <button onclick="startAuth()">Iniciar sesión con Google</button>
+  <button onclick="refreshEmails()">🔄 Refrescar correos</button>
+  <div id="accounts"></div>
+  <hr>
+  <div id="emails">Cargando...</div>
 
   <script>
-    const CLIENT_ID = '668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com';
-    const REDIRECT_URI = 'https://lvsecondary.github.io/stnlvdygmail/';
-    const SCOPES = 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email';
+    const CLIENT_ID = "668304089967-0hphsaua88ml50hubej24s4dpqf2ff83.apps.googleusercontent.com";
+    const REDIRECT_URI = "https://lvsecondary.github.io/stnlvdygmail/";
+    const SCOPES = "https://www.googleapis.com/auth/gmail.readonly";
+    const STATE_KEY = "gmail_widget_tokens";
 
-    let accounts = JSON.parse(localStorage.getItem("gmail_accounts") || "{}");
-    let currentEmail = localStorage.getItem("gmail_current_email");
+    const getStoredTokens = () => JSON.parse(localStorage.getItem(STATE_KEY) || '{}');
+    const saveStoredTokens = tokens => localStorage.setItem(STATE_KEY, JSON.stringify(tokens));
 
-    function updateUI(email) {
-      document.getElementById("userEmail").innerText = email || "No iniciada";
-      const buttonsDiv = document.getElementById("accountSwitchButtons");
-      buttonsDiv.innerHTML = "";
-      Object.keys(accounts).forEach(mail => {
-        const btn = document.createElement("button");
-        btn.textContent = mail;
-        btn.onclick = () => {
-          localStorage.setItem("gmail_current_email", mail);
-          currentEmail = mail;
-          refreshMails();
-        };
-        buttonsDiv.appendChild(btn);
-      });
-    }
+    let accessToken = null;
+    let currentAccount = null;
 
-    function startPopupLogin() {
-      const state = Math.random().toString(36).substring(2);
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=token&scope=${encodeURIComponent(SCOPES)}&include_granted_scopes=true&prompt=consent&state=${state}`;
-      
-      const width = 500;
-      const height = 600;
-      const left = (screen.width / 2) - (width / 2);
-      const top = (screen.height / 2) - (height / 2);
+    function startAuth() {
+      const authWindow = window.open(
+        `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=token&scope=${encodeURIComponent(SCOPES)}&prompt=consent`,
+        "authPopup",
+        "width=500,height=600"
+      );
 
-      const popup = window.open(authUrl, 'popup', `width=${width},height=${height},top=${top},left=${left}`);
-
-      const pollTimer = window.setInterval(() => {
+      const pollTimer = setInterval(() => {
         try {
-          if (popup.location.href.includes('#access_token')) {
-            window.clearInterval(pollTimer);
-            const hash = popup.location.hash;
-            const params = new URLSearchParams(hash.substring(1));
-            const token = params.get("access_token");
-            popup.close();
-            if (token) fetchEmails(token);
+          if (!authWindow || authWindow.closed) {
+            clearInterval(pollTimer);
+            return;
           }
-        } catch (e) { }
+
+          const url = authWindow.location.href;
+          if (url.startsWith(REDIRECT_URI) && url.includes("access_token")) {
+            const params = new URLSearchParams(url.split("#")[1]);
+            const token = params.get("access_token");
+            authWindow.close();
+            clearInterval(pollTimer);
+            fetchUserInfo(token);
+          }
+        } catch (e) {}
       }, 500);
     }
 
-    async function fetchEmails(token) {
-      const profile = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-        headers: { Authorization: `Bearer ${token}` }
-      }).then(r => r.json());
-
-      if (profile?.email) {
-        accounts[profile.email] = token;
-        localStorage.setItem("gmail_accounts", JSON.stringify(accounts));
-        localStorage.setItem("gmail_current_email", profile.email);
-        currentEmail = profile.email;
-        updateUI(currentEmail);
-        getEmails(token);
+    async function fetchUserInfo(token) {
+      const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.email) {
+        const tokens = getStoredTokens();
+        tokens[data.email] = token;
+        saveStoredTokens(tokens);
+        currentAccount = data.email;
+        accessToken = token;
+        updateAccountInfo();
+        loadEmails();
       }
     }
 
-    async function getEmails(token) {
-      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10', {
-        headers: { Authorization: `Bearer ${token}` }
+    function updateAccountInfo() {
+      document.getElementById("account-info").innerText = currentAccount
+        ? `Conectado como: ${currentAccount}`
+        : "No has iniciado sesión.";
+      renderAccountSwitcher();
+    }
+
+    function renderAccountSwitcher() {
+      const container = document.getElementById("accounts");
+      const tokens = getStoredTokens();
+      container.innerHTML = Object.keys(tokens).map(email => `
+        <button class="account-btn" onclick="switchAccount('${email}')">${email}</button>
+      `).join("");
+    }
+
+    function switchAccount(email) {
+      const tokens = getStoredTokens();
+      if (tokens[email]) {
+        currentAccount = email;
+        accessToken = tokens[email];
+        updateAccountInfo();
+        loadEmails();
+      }
+    }
+
+    async function loadEmails() {
+      if (!accessToken) return;
+      const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10", {
+        headers: { Authorization: `Bearer ${accessToken}` }
       });
       const data = await res.json();
+      const emailsDiv = document.getElementById("emails");
+      emailsDiv.innerHTML = "";
 
-      if (!data.messages) {
-        document.getElementById("emails").innerHTML = "<p>No se encontraron correos.</p>";
+      if (!data.messages || data.messages.length === 0) {
+        emailsDiv.innerHTML = "<p>No hay correos recientes.</p>";
         return;
       }
 
-      const emailsHtml = await Promise.all(data.messages.map(async msg => {
+      for (const msg of data.messages) {
         const msgRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${accessToken}` }
         });
         const msgData = await msgRes.json();
         const headers = msgData.payload.headers;
+        const from = headers.find(h => h.name === "From")?.value || "Desconocido";
         const subject = headers.find(h => h.name === "Subject")?.value || "(Sin asunto)";
-        const from = headers.find(h => h.name === "From")?.value || "(Remitente desconocido)";
-        let body = getBody(msgData.payload);
-        body = body.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
+        const snippet = msgData.snippet;
 
-        return `
-          <div class="email-header" onclick="toggleBody('${msg.id}')">${subject} - <small>${from}</small></div>
-          <div id="body-${msg.id}" class="email-body">${body}</div>
+        const div = document.createElement("div");
+        div.className = "email";
+        div.innerHTML = `
+          <strong>${subject}</strong><br>
+          <em>${from}</em>
+          <div class="email-body">${snippet.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>')}</div>
         `;
-      }));
-
-      document.getElementById("emails").innerHTML = emailsHtml.join("");
-    }
-
-    function getBody(payload) {
-      let encodedBody = "";
-      if (payload.parts && payload.parts.length) {
-        const htmlPart = payload.parts.find(part => part.mimeType === "text/html" || part.mimeType === "text/plain");
-        if (htmlPart && htmlPart.body?.data) encodedBody = htmlPart.body.data;
-      } else if (payload.body?.data) {
-        encodedBody = payload.body.data;
-      }
-
-      try {
-        return decodeURIComponent(escape(atob(encodedBody.replace(/-/g, '+').replace(/_/g, '/'))));
-      } catch (e) {
-        return "(No se pudo decodificar el contenido)";
+        div.onclick = () => {
+          const body = div.querySelector(".email-body");
+          body.style.display = body.style.display === "none" ? "block" : "none";
+        };
+        emailsDiv.appendChild(div);
       }
     }
 
-    function toggleBody(id) {
-      const el = document.getElementById("body-" + id);
-      el.style.display = el.style.display === "none" ? "block" : "none";
-    }
-
-    function refreshMails() {
-      if (currentEmail && accounts[currentEmail]) {
-        updateUI(currentEmail);
-        getEmails(accounts[currentEmail]);
-      }
+    function refreshEmails() {
+      if (accessToken) loadEmails();
     }
 
     window.onload = () => {
-      const hash = window.location.hash;
-      if (hash.includes("access_token")) {
-        const params = new URLSearchParams(hash.substring(1));
-        const token = params.get("access_token");
-        window.location.hash = "";
-        if (token) fetchEmails(token);
-      } else if (currentEmail && accounts[currentEmail]) {
-        refreshMails();
+      const tokens = getStoredTokens();
+      const emails = Object.keys(tokens);
+      if (emails.length > 0) {
+        currentAccount = emails[0];
+        accessToken = tokens[currentAccount];
+        updateAccountInfo();
+        loadEmails();
       } else {
-        updateUI(null);
+        document.getElementById("emails").innerHTML = "Inicia sesión para ver tus correos.";
       }
     };
   </script>
