@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Gmail Widget v0.8</title>
+  <title>Gmail Widget v0.9</title>
   <style>
     body {
       background-color: #1e1e1e;
@@ -43,14 +43,17 @@
     .account-selector {
       margin: 10px 0;
     }
-    a { color: #4da6ff; word-break: break-word; }
+    a {
+      color: #4da6ff;
+      word-break: break-word;
+    }
     iframe {
       max-width: 100%;
     }
   </style>
 </head>
 <body>
-  <h2>📬 Gmail Widget <small style="opacity:0.5;">v0.8</small></h2>
+  <h2>📬 Gmail Widget <small style="opacity:0.5;">v0.9</small></h2>
   <button onclick="handleAuthClick()">Iniciar sesión con Google</button>
   <button onclick="fetchEmails()">🔄 Refrescar</button>
   <select id="accountSelect" class="account-selector" onchange="switchAccount()"></select>
@@ -66,13 +69,13 @@
       const select = document.getElementById("accountSelect");
       select.innerHTML = "";
       const tokens = JSON.parse(localStorage.getItem("gmail_tokens") || "{}");
-      for (const email in tokens) {
+      Object.keys(tokens).forEach(email => {
         const option = document.createElement("option");
         option.value = email;
         option.textContent = email;
         if (email === activeAccount) option.selected = true;
         select.appendChild(option);
-      }
+      });
     }
 
     function switchAccount() {
@@ -84,19 +87,21 @@
     }
 
     function handleAuthClick() {
-      const popup = window.open(
-        `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${window.location.origin}&response_type=token&scope=${SCOPES}`,
-        "auth",
-        "width=500,height=600"
-      );
+      const redirectUri = window.location.origin + window.location.pathname;
+      const oauthURL = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&response_type=token&scope=${SCOPES}`;
 
-      const interval = setInterval(() => {
+      const popup = window.open(oauthURL, "authPopup", "width=500,height=600");
+
+      const pollTimer = setInterval(() => {
         try {
-          if (popup.location.href.includes("access_token")) {
-            const params = new URLSearchParams(popup.location.hash.substr(1));
+          if (!popup || popup.closed) {
+            clearInterval(pollTimer);
+          } else if (popup.location.href.startsWith(redirectUri)) {
+            const hash = popup.location.hash.substr(1);
+            const params = new URLSearchParams(hash);
             accessToken = params.get("access_token");
             popup.close();
-            clearInterval(interval);
+            clearInterval(pollTimer);
             getUserEmail(accessToken).then(email => {
               const tokens = JSON.parse(localStorage.getItem("gmail_tokens") || "{}");
               tokens[email] = accessToken;
@@ -107,7 +112,7 @@
             });
           }
         } catch (e) {}
-      }, 1000);
+      }, 500);
     }
 
     async function getUserEmail(token) {
@@ -148,14 +153,13 @@
       }
 
       parsePart(data.payload);
-
       return { subject, from, body };
     }
 
     function displayEmails(emails) {
       const container = document.getElementById("emailList");
       container.innerHTML = "";
-      emails.forEach((email, index) => {
+      emails.forEach(email => {
         const item = document.createElement("div");
         item.className = "email-item";
 
@@ -177,7 +181,6 @@
       });
     }
 
-    // Auto load if tokens exist
     window.onload = () => {
       const tokens = JSON.parse(localStorage.getItem("gmail_tokens") || "{}");
       const emails = Object.keys(tokens);
@@ -187,7 +190,7 @@
         updateAccountSelector();
         fetchEmails();
       }
-      setInterval(fetchEmails, 300000); // 5 minutos
+      setInterval(fetchEmails, 300000); // cada 5 minutos
     };
   </script>
 </body>
